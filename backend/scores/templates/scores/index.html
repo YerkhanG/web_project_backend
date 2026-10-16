@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leaderboard</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; background: #12141c; color: #e8e8ee; margin: 0; padding: 2rem 1rem; }
+    main { max-width: 640px; margin: 0 auto; }
+    h1 { margin: 0 0 .25rem; }
+    .sub { color: #8b8fa3; margin: 0 0 1.5rem; }
+    form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: .5rem; margin-bottom: .5rem; }
+    input, button { padding: .6rem; border-radius: 6px; border: 1px solid #343850; background: #1c1f2c; color: inherit; font: inherit; }
+    button { background: #5b6cff; border-color: #5b6cff; cursor: pointer; font-weight: 600; }
+    #msg { min-height: 1.5rem; color: #7fe3a1; margin: .25rem 0 1rem; }
+    #msg.err { color: #ff8b8b; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid #262a3c; }
+    th { color: #8b8fa3; font-weight: 500; font-size: .85rem; }
+    tbody tr:first-child td { color: #ffd166; font-weight: 600; }
+    .row { display: flex; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+    .row input { flex: 1; }
+    @media (max-width: 560px) { form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Leaderboard</h1>
+  <p class="sub" id="stats">Loading...</p>
+
+  <form id="form">
+    <input id="player" placeholder="Player name" maxlength="32" required>
+    <input id="points" type="number" min="0" placeholder="Score" required>
+    <input id="game" list="games" placeholder="Game" value="arcade">
+    <button type="submit">Submit</button>
+  </form>
+  <datalist id="games"><option value="arcade"><option value="snake"><option value="tetris"></datalist>
+  <div id="msg"></div>
+
+  <div class="row">
+    <span>Showing top 10 for</span>
+    <input id="view" list="games" value="arcade">
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Player</th><th>Best score</th><th>Games played</th></tr></thead>
+    <tbody id="board"></tbody>
+  </table>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  async function loadStats() {
+    const data = await (await fetch("/api/stats/")).json();
+    $("stats").textContent = `${data.total_scores} scores from ${data.total_players} players`;
+  }
+
+  async function loadBoard() {
+    const game = $("view").value.trim() || "arcade";
+    const data = await (await fetch(`/api/leaderboard/?game=${encodeURIComponent(game)}&limit=10`)).json();
+    const body = $("board");
+    body.replaceChildren();
+    if (data.leaderboard.length === 0) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 4;
+      td.textContent = "No scores yet. Be the first!";
+      tr.appendChild(td);
+      body.appendChild(tr);
+      return;
+    }
+    for (const row of data.leaderboard) {
+      const tr = document.createElement("tr");
+      for (const value of [row.rank, row.player, row.best_score, row.games_played]) {
+        const td = document.createElement("td");
+        td.textContent = value; 
+        tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+  }
+
+  $("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const game = $("game").value.trim() || "arcade";
+    const res = await fetch("/api/scores/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ player: $("player").value, points: Number($("points").value), game: game }),
+    });
+    const data = await res.json();
+    const msg = $("msg");
+    msg.className = res.ok ? "" : "err";
+    msg.textContent = res.ok
+      ? `${data.player} scored ${data.points} in ${data.game}: rank #${data.rank}${data.new_personal_best ? " (new personal best!)" : ""}`
+      : data.error;
+    if (res.ok) {
+      $("view").value = game;
+      loadBoard();
+      loadStats();
+    }
+  });
+
+  $("view").addEventListener("change", loadBoard);
+  loadBoard();
+  loadStats();
+</script>
+</body>
+</html>
